@@ -1,6 +1,5 @@
 // Copyright © 2017 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: BSD-2-Clause
-//
 package nfs
 
 import (
@@ -25,6 +24,12 @@ type File struct {
 	// filehandle to the file
 	fh []byte
 }
+
+// type message struct {
+// 	Xid     uint32
+// 	Msgtype uint32
+// 	Body    *WriteArgs
+// }
 
 // Readlink gets the target of a symlink
 func (f *File) Readlink() (string, error) {
@@ -124,6 +129,17 @@ func (f *File) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// type WriteArgs struct {
+// 	rpc.Header
+// 	FH     []byte
+// 	Offset uint64
+// 	Count  uint32
+
+// 	// UNSTABLE(0), DATA_SYNC(1), FILE_SYNC(2) default
+// 	How      uint32
+// 	Contents []byte
+// }
+
 func (f *File) Write(p []byte) (int, error) {
 	type WriteArgs struct {
 		rpc.Header
@@ -145,11 +161,11 @@ func (f *File) Write(p []byte) (int, error) {
 
 	totalToWrite := uint32(len(p))
 	written := uint32(0)
-
+	// var start time.Time
+	// var times []time.Duration
 	for written = 0; written < totalToWrite; {
 		writeSize := min(f.fsinfo.WTPref, totalToWrite-written)
-
-		res, err := f.call(&WriteArgs{
+		args := &WriteArgs{
 			Header: rpc.Header{
 				Rpcvers: 2,
 				Prog:    Nfs3Prog,
@@ -163,10 +179,29 @@ func (f *File) Write(p []byte) (int, error) {
 			Count:    writeSize,
 			How:      2,
 			Contents: p[written : written+writeSize],
-		})
+		}
+
+		// xid := atomic.AddUint32(util.GetXid(), 1)
+
+		// msg := &message{
+		// 	Xid:  xid,
+		// 	Body: args,
+		// }
+
+		// w := new(bytes.Buffer)
+		// if err := Write2(w, msg); err != nil {
+		// 	fmt.Println("This is an error here")
+		// }
+
+		// start = time.Now()
+		// res, err := f.writeCall(xid, w)
+		res, err := f.call(args)
+		// times = times2
+		// fmt.Printf("In file %d\n", len(times))
 
 		if err != nil {
 			util.Errorf("write(%x): %s", f.fh, err.Error())
+			// times = append(times, time.Since(start))
 			return int(written), err
 		}
 
@@ -184,9 +219,13 @@ func (f *File) Write(p []byte) (int, error) {
 		f.curr += uint64(writeres.Count)
 		written += writeres.Count
 
-		util.Debugf("write(%x) len=%d new_offset=%d written=%d total=%d", f.fh, totalToWrite, f.curr, writeres.Count, written)
-	}
+		f.curr += uint64(writeSize)
+		written += writeSize
 
+		util.Debugf("write(%x) len=%d new_offset=%d written=%d total=%d", f.fh, totalToWrite, f.curr, writeSize, written)
+	}
+	// times = append(times, time.Since(start))
+	// fmt.Printf("Here %d\n", len(times))
 	return int(written), nil
 }
 
@@ -292,3 +331,118 @@ func min(x, y uint32) uint32 {
 	}
 	return x
 }
+
+// func Write2(w io.Writer, val interface{}) error {
+// 	// _, err := xdr.Marshal(w, val)
+// 	// fmt.Println(val.(type))
+// 	msg, ok := val.(*message)
+
+// 	enc := xdr.NewEncoder(w)
+
+// 	if ok {
+// 		// Xid - Uint
+// 		enc.EncodeUint(msg.Xid)
+// 		// fmt.Printf("Number of bytes written: %v\n", n)
+// 		// if err != nil {
+// 		// 	fmt.Println(err)
+// 		// }
+// 		// Message Type
+// 		enc.EncodeUint(msg.Msgtype)
+// 	} else {
+// 		fmt.Println("Not ok!")
+// 	}
+
+// 	writeArgs := msg.Body
+
+// 	if ok {
+// 		// RPC header
+// 		// RPC Version
+// 		_, err := enc.EncodeUint(writeArgs.Header.Rpcvers)
+// 		if err != nil {
+// 			fmt.Println("RPC Version not handled correctly")
+// 		}
+// 		// fmt.Printf("RPC Version wrote %d bytes\n", n)
+
+// 		// Prog
+// 		_, err = enc.EncodeUint(writeArgs.Header.Prog)
+// 		if err != nil {
+// 			fmt.Println("Prog not handled correctly")
+// 		}
+// 		// fmt.Printf("Prog wrote %d bytes\n", n)
+
+// 		// RPC Version
+// 		_, err = enc.EncodeUint(writeArgs.Header.Vers)
+// 		if err != nil {
+// 			fmt.Println("RPC Version not handled correctly")
+// 		}
+// 		// fmt.Printf("RPC Version wrote %d bytes\n", n)
+
+// 		// RPC Proc
+// 		_, err = enc.EncodeUint(writeArgs.Header.Proc)
+// 		if err != nil {
+// 			fmt.Println("RPC Proc not handled correctly")
+// 		}
+// 		// fmt.Printf("RPC Proc wrote %d bytes\n", n)
+
+// 		// Cred Flavor
+// 		_, err = enc.EncodeUint(writeArgs.Header.Cred.Flavor)
+// 		if err != nil {
+// 			fmt.Println("Cred Flavor not handled correctly")
+// 		}
+// 		// fmt.Printf("Cred Flavor wrote %d bytes\n", n)
+
+// 		// Cred Body
+// 		_, err = enc.EncodeOpaque(writeArgs.Header.Cred.Body)
+// 		if err != nil {
+// 			fmt.Println("Cred Body not handled correctly")
+// 		}
+// 		// fmt.Printf("Cred Body wrote %d bytes\n", n)
+
+// 		// Verf Flavor
+// 		_, err = enc.EncodeUint(writeArgs.Header.Verf.Flavor)
+// 		if err != nil {
+// 			fmt.Println("Verf Flavor not handled correctly")
+// 		}
+// 		// fmt.Printf("Verf Flavor wrote %d bytes\n", n)
+
+// 		// Verf Body
+// 		_, err = enc.EncodeOpaque(writeArgs.Header.Verf.Body)
+// 		if err != nil {
+// 			fmt.Println("Verf Body not handled correctly")
+// 		}
+// 		// fmt.Printf("Verf Body wrote %d bytes\n", n)
+
+// 		// File handle
+// 		_, err = enc.EncodeOpaque(writeArgs.FH)
+// 		if err != nil {
+// 			fmt.Println("FH not handled correctly")
+// 		}
+// 		// fmt.Printf("FH wrote %d bytes\n", n)
+// 		// Offset
+// 		_, err = enc.EncodeUhyper(writeArgs.Offset)
+// 		if err != nil {
+// 			fmt.Println("Offset not handled correctly")
+// 		}
+// 		// fmt.Printf("Offset wrote %d bytes\n", n)
+
+// 		// Count
+// 		_, err = enc.EncodeUint(writeArgs.Count)
+// 		if err != nil {
+// 			fmt.Println("Count not handled correctly")
+// 		}
+// 		// fmt.Printf("Count wrote %d bytes\n", n)
+
+// 		// How
+// 		_, err = enc.EncodeUint(writeArgs.How)
+// 		if err != nil {
+// 			fmt.Println("How not handled correctly")
+// 		}
+// 		// fmt.Printf("How wrote %d bytes\n", n)
+
+// 		// Contents
+// 		enc.EncodeOpaque(writeArgs.Contents)
+
+// 	}
+
+// 	return nil
+// }

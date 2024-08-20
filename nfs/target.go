@@ -1,9 +1,9 @@
 // Copyright © 2017 VMware, Inc. All Rights Reserved.
 // SPDX-License-Identifier: BSD-2-Clause
-//
 package nfs
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"path"
@@ -58,6 +58,25 @@ func NewTarget(addr string, auth rpc.Auth, fh []byte, dirpath string) (*Target, 
 // wraps the Call function to check status and decode errors
 func (v *Target) call(c interface{}) (io.ReadSeeker, error) {
 	res, err := v.Call(c)
+	if err != nil {
+		return nil, err
+	}
+
+	status, err := xdr.ReadUint32(res)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = NFS3Error(status); err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
+// wraps the Call function to check status and decode errors
+func (v *Target) writeCall(xid uint32, w2 *bytes.Buffer) (io.ReadSeeker, error) {
+	res, err := v.WriteCall(xid, w2)
 	if err != nil {
 		return nil, err
 	}
